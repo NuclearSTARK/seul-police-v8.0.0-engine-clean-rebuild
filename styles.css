@@ -1,0 +1,53 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; }
+    select option { background: #1e293b; color: #f1f5f9; }
+    input::placeholder { color: #475569; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+
+/* Global notice marquee */
+.notice-marquee {
+  display: inline-block;
+  min-width: 100%;
+  padding-left: 100%;
+  animation: spNoticeMarquee 16s linear infinite;
+}
+@keyframes spNoticeMarquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice-marquee { animation: none; padding-left: 12px; min-width: auto; }
+}
+
+/* v5.5.9 mobile input/orientation hardening */
+input, select, textarea, button {
+  font-size: 16px !important;
+}
+html, body {
+  width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+@media screen and (orientation: landscape) and (max-height: 520px) {
+  body::before {
+    content: "세로모드로 돌려서 사용해주세요";
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: #0b1225;
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 900;
+    padding: 24px;
+  }
+  #root {
+    display: none !important;
+  }
+}
