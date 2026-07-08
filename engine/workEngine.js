@@ -1,10 +1,10 @@
-// SEUL-POLICE v8.0.0 Work Engine
+// SEUL-POLICE v8.1.0 Work Engine
 // UI/Firebase와 분리된 순수 근무순서 엔진입니다.
 // 핵심 원칙:
-// 1) 엔진은 숫자 패턴만 계산합니다.
-// 2) 기본 회전은 오른쪽 회전만 사용합니다: 1234 → 4123 → 3412 → 2341
-// 3) C반 1발전만 BASE_PATTERN이 1432입니다.
-// 4) 모든 반은 동일한 회전 엔진을 사용하며, C반 1발전만 기준 패턴이 다릅니다.
+// 1) A/B/D반은 기존 전체 근무일 오른쪽 회전 엔진을 그대로 사용합니다.
+// 2) C반은 발전소/근무종류별 영구 패턴 테이블을 사용합니다.
+// 3) 휴무는 카운트하지 않습니다.
+// 4) 엔진은 숫자 패턴만 계산하고, 마지막에 근무자명으로 매핑합니다.
 (function () {
   const BASE_DATE = new Date(2026, 6, 1); // 2026-07-01
 
@@ -13,10 +13,23 @@
     'A-2발전': [1, 2, 3, 4],
     'B-1발전': [1, 2, 3, 4],
     'B-2발전': [1, 2, 3, 4],
-    'C-1발전': [1, 4, 3, 2],
-    'C-2발전': [1, 2, 3, 4],
     'D-1발전': [1, 2, 3, 4],
     'D-2발전': [1, 2, 3, 4],
+  };
+
+  // C반 전용 영구 패턴.
+  // 각 근무종류(D/N/A)는 서로 독립적으로 카운트한다.
+  const C_SHIFT_PATTERNS = {
+    '1발전': {
+      D: [[1,4,3,2], [2,1,4,3], [3,2,1,4], [4,3,2,1]],
+      N: [[4,3,2,1], [1,4,3,2], [2,1,4,3], [3,2,1,4]],
+      A: [[2,1,4,3], [3,2,1,4], [4,3,2,1], [1,4,3,2]],
+    },
+    '2발전': {
+      D: [[1,2,3,4], [4,1,2,3], [3,4,1,2], [2,3,4,1]],
+      N: [[4,3,2,1], [1,4,3,2], [2,1,4,3], [3,2,1,4]],
+      A: [[2,4,1,3], [3,2,4,1], [1,3,2,4], [4,1,3,2]],
+    },
   };
 
   function getBandCode(band) {
@@ -73,36 +86,61 @@
     return -count;
   }
 
+  function positiveMod(num, mod) {
+    return ((Number(num || 0) % mod) + mod) % mod;
+  }
+
   function mapPatternToNames(patternNumbers, names, workerOrder, workerCount) {
     const count = Number(workerCount || 4);
     const safeNames = Array.isArray(names) ? names : [];
-    const safeOrder = Array.isArray(workerOrder) ? workerOrder : Array.from({ length: count }, (_, i) => i);
-
-    // 번호 1~N은 '근무자 선택 화면에서 저장한 순서'를 의미합니다.
-    // 예: 1 = 저장명단 첫 번째 사람, 2 = 두 번째 사람.
-    // 근무별순서/이전 보정값이 근무자 매핑을 덮어쓰지 않도록 workerOrder는 사용하지 않습니다.
     return patternNumbers.slice(0, count).map(num => {
       const nameIdx = Number(num) - 1;
       return safeNames[nameIdx] || `근무자${num}`;
     });
   }
 
+  function generateCDisplayPattern({ year, month, day, band, division, shift, workerCount, getShiftForDate }) {
+    const plantPatterns = C_SHIFT_PATTERNS[division];
+    const shiftPatterns = plantPatterns && plantPatterns[shift];
+
+    // C반이어도 정의되지 않은 값은 안전하게 기본 엔진으로 보낸다.
+    if (!shiftPatterns) return null;
+
+    const count = countWorkDaysFromBase({
+      year,
+      month,
+      day,
+      band,
+      division,
+      shiftFilter: shift,
+      getShiftForDate,
+    });
+
+    const idx = positiveMod(count, shiftPatterns.length);
+    return normalizePattern(shiftPatterns[idx], workerCount);
+  }
+
   function generateDisplayOrder({ year, month, day, band, division, shift, workerCount, names, workerOrder, getShiftForDate }) {
+    const bandCode = getBandCode(band);
+
+    if (bandCode === 'C') {
+      const cPattern = generateCDisplayPattern({ year, month, day, band, division, shift, workerCount, getShiftForDate });
+      if (cPattern) return mapPatternToNames(cPattern, names, workerOrder, workerCount);
+    }
+
+    // A/B/D반: 기존 전체 근무일 기준 오른쪽 회전.
     const key = getPatternKey(band, division);
     const pattern = normalizePattern(BASE_PATTERN[key] || [1, 2, 3, 4], workerCount);
-
-    // v8.0.0: 회전은 하나만 사용합니다.
-    // C반 1발전은 BASE_PATTERN만 [1,4,3,2]로 다르고, 별도 근무별 카운터는 사용하지 않습니다.
-    const shiftFilter = null;
-    const workCount = countWorkDaysFromBase({ year, month, day, band, division, shiftFilter, getShiftForDate });
+    const workCount = countWorkDaysFromBase({ year, month, day, band, division, shiftFilter: null, getShiftForDate });
     const rotated = rotateRight(pattern, workCount);
     return mapPatternToNames(rotated, names, workerOrder, workerCount);
   }
 
   window.SeulPoliceWorkEngine = {
-    version: '8.0.0',
+    version: '8.1.0',
     BASE_DATE,
     BASE_PATTERN,
+    C_SHIFT_PATTERNS,
     rotateRight,
     generateDisplayOrder,
     _countWorkDaysFromBase: countWorkDaysFromBase,
